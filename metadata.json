@@ -1,0 +1,6 @@
+{
+  "name": "Alfa Link — Pós-Venda & Migração de Marketplaces",
+  "description": "Plataforma SaaS multi-tenant de pós-venda, fidelização, gamificação por roleta e migração de clientes de marketplaces para o canal próprio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
