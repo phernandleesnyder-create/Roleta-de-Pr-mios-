@@ -95,9 +95,9 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [recoverSuccess, setRecoverSuccess] = useState(false);
 
-  // Login / Register form state
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
+  // Login / Register form state (pre-filled with admin access credentials for convenience)
+  const [emailInput, setEmailInput] = useState('demo@alfalink.com.br');
+  const [passwordInput, setPasswordInput] = useState('demo123');
   const [nameInput, setNameInput] = useState('');
   const [companyNameInput, setCompanyNameInput] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
@@ -111,13 +111,21 @@ export default function App() {
     try {
       setLoadingWorkspace(true);
       if (!getAuthToken()) {
-        // Initialize full demo session on first access so Pizzaria Demo is immediately ready
         const demoRes = await api.startDemoSession();
         setAuthToken(demoRes.token);
       }
-      const data = await api.getWorkspace();
-      setWorkspace(data);
-      setAuthMode('authenticated');
+      try {
+        const data = await api.getWorkspace();
+        setWorkspace(data);
+        setAuthMode('authenticated');
+      } catch {
+        // Token might be expired or invalid; refresh session once automatically
+        const demoRes = await api.startDemoSession();
+        setAuthToken(demoRes.token);
+        const data = await api.getWorkspace();
+        setWorkspace(data);
+        setAuthMode('authenticated');
+      }
     } catch (err: any) {
       console.error('Failed to load workspace:', err);
       setAuthMode('login');
@@ -158,6 +166,8 @@ export default function App() {
   const handleLogout = () => {
     setAuthToken(null);
     setWorkspace(null);
+    setEmailInput('demo@alfalink.com.br');
+    setPasswordInput('demo123');
     setAuthMode('login');
     setAuthError(null);
     window.history.pushState({}, '', '/login');
@@ -188,7 +198,10 @@ export default function App() {
       const cred = await signInWithPopup(auth, googleAuthProvider);
       const idToken = await cred.user.getIdToken();
       setAuthToken(idToken);
-      await api.syncGoogleUser(companyNameInput || undefined);
+      const syncRes = await api.syncGoogleUser(companyNameInput || undefined);
+      if (syncRes?.token) {
+        setAuthToken(syncRes.token);
+      }
       const data = await api.getWorkspace();
       setWorkspace(data);
       if (!data.company.onboardingCompleted) {
@@ -198,7 +211,7 @@ export default function App() {
       window.history.pushState({}, '', '/dashboard');
     } catch (err: any) {
       setAuthError(
-        err.message || 'Não foi possível autenticar com o Google. Tente usar e-mail ou conta Demo.'
+        err.message || 'Não foi possível autenticar com o Google. Tente usar o login abaixo.'
       );
     } finally {
       setAuthSubmitting(false);

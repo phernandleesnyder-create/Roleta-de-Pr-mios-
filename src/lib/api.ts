@@ -1,14 +1,40 @@
 import { WorkspaceData } from '../types/alfa.ts';
 
-// Store auth token strictly in memory (never in localStorage)
-let memoryAuthToken: string | null = null;
+const TOKEN_STORAGE_KEY = 'alfa_link_session_token';
+let memoryAuthToken: string | null = (() => {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_STORAGE_KEY) : null;
+  } catch {
+    return null;
+  }
+})();
 
 export function setAuthToken(token: string | null) {
   memoryAuthToken = token;
+  try {
+    if (typeof window !== 'undefined') {
+      if (token) {
+        window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      } else {
+        window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    }
+  } catch {
+    // Ignore storage errors in restricted iframes
+  }
 }
 
 export function getAuthToken(): string | null {
-  return memoryAuthToken;
+  if (memoryAuthToken) return memoryAuthToken;
+  try {
+    if (typeof window !== 'undefined') {
+      memoryAuthToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+      return memoryAuthToken;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -17,8 +43,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string>),
   };
 
-  if (memoryAuthToken) {
-    headers['Authorization'] = `Bearer ${memoryAuthToken}`;
+  const currentToken = getAuthToken();
+  if (currentToken) {
+    headers['Authorization'] = `Bearer ${currentToken}`;
   }
 
   const res = await fetch(path, {
@@ -57,7 +84,7 @@ export const api = {
     }),
 
   syncGoogleUser: (companyName?: string) =>
-    request<{ profile: any; company: any }>('/api/auth/google-sync', {
+    request<{ token?: string; profile: any; company: any }>('/api/auth/google-sync', {
       method: 'POST',
       body: JSON.stringify({ companyName }),
     }),

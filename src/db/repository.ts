@@ -488,13 +488,20 @@ export async function registerOrLoginUser(params: {
   passwordHash?: string;
 }) {
   try {
-    const existingProfile = await getProfileByAuthUid(params.authUserId);
+    const existingByUid = await getProfileByAuthUid(params.authUserId);
+    const existingByEmail = !existingByUid && params.email
+      ? await getProfileByEmail(params.email)
+      : null;
+    const existingProfile = existingByUid || existingByEmail;
+
     if (existingProfile) {
       const companyRows = await db
         .select()
         .from(companies)
         .where(eq(companies.id, existingProfile.companyId));
-      return { profile: existingProfile, company: companyRows[0] };
+      if (companyRows[0]) {
+        return { profile: existingProfile, company: companyRows[0] };
+      }
     }
 
     const baseName = params.companyName?.trim() || `Empresa de ${params.name}`;
@@ -582,16 +589,19 @@ export async function registerOrLoginUser(params: {
       });
     }
 
-    const qrCodeStr = `QR-${uniqueSlug.toUpperCase().slice(0, 8)}-1`;
-    await db.insert(qrCodes).values({
-      companyId: company.id,
-      campaignId: campaign.id,
-      code: qrCodeStr,
-      destinationUrl: `/c/${company.slug}/${campaign.slug}?qr=${qrCodeStr}`,
-      sourceChannel: 'iFood',
-      active: true,
-      scanCount: 0,
-    });
+    const qrCodeStr = `QR-${company.id}-${campaign.id}-${Math.floor(1000 + Math.random() * 9000)}`;
+    await db
+      .insert(qrCodes)
+      .values({
+        companyId: company.id,
+        campaignId: campaign.id,
+        code: qrCodeStr,
+        destinationUrl: `/c/${company.slug}/${campaign.slug}?qr=${qrCodeStr}`,
+        sourceChannel: 'iFood',
+        active: true,
+        scanCount: 0,
+      })
+      .onConflictDoNothing();
 
     return { profile, company };
   } catch (error) {

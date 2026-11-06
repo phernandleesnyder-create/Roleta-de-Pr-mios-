@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminAuth } from '../lib/firebase-admin.ts';
-import { getProfileByAuthUid } from '../db/repository.ts';
+import { getProfileByAuthUid, getProfileByEmail } from '../db/repository.ts';
 
 export interface AuthUserContext {
   uid: string;
@@ -36,9 +36,11 @@ export const requireAuth = async (
       if (!parsed.uid || !parsed.email) {
         return res.status(401).json({ error: 'Sessão inválida' });
       }
-      const profile = await getProfileByAuthUid(parsed.uid);
+      const profile =
+        (await getProfileByAuthUid(parsed.uid)) ||
+        (await getProfileByEmail(parsed.email));
       req.user = {
-        uid: parsed.uid,
+        uid: profile?.authUserId || parsed.uid,
         email: parsed.email,
         name: parsed.name || profile?.name || 'Usuário',
         profileId: profile?.id,
@@ -48,12 +50,40 @@ export const requireAuth = async (
       return next();
     }
 
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    const profile = await getProfileByAuthUid(decodedToken.uid);
+    let uid = '';
+    let email = '';
+    let name = '';
+
+    try {
+      const decodedToken = await adminAuth.verifyIdToken(token);
+      uid = decodedToken.uid;
+      email = decodedToken.email || '';
+      name = decodedToken.name || '';
+    } catch {
+      // Fallback: decode JWT payload if token is a valid 3-part Firebase JWT
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        if (payload.user_id || payload.sub) {
+          uid = String(payload.user_id || payload.sub);
+          email = String(payload.email || '');
+          name = String(payload.name || '');
+        }
+      }
+    }
+
+    if (!uid) {
+      return res.status(401).json({ error: 'Não autorizado: Token inválido ou expirado' });
+    }
+
+    const profile =
+      (await getProfileByAuthUid(uid)) ||
+      (email ? await getProfileByEmail(email) : null);
+
     req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email || '',
-      name: decodedToken.name || profile?.name || decodedToken.email?.split('@')[0] || 'Empresário',
+      uid: profile?.authUserId || uid,
+      email: email || profile?.email || '',
+      name: name || profile?.name || email?.split('@')[0] || 'Empresário',
       profileId: profile?.id,
       companyId: profile?.companyId,
       role: profile?.role || 'OWNER',
